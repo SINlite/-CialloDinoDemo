@@ -1,5 +1,6 @@
 package com.example.ciallodino
 
+
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -35,6 +36,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import com.example.ciallodino.R
+
 
 class MainActivity : ComponentActivity() {
     private var mediaPlayerService: MediaPlayerService? = null
@@ -118,8 +121,8 @@ fun DinoGameApp(    onJump: () -> Unit = {}
 
     // 游戏资源
     val context = LocalContext.current
-    val dinoBitmap = ImageBitmap.imageResource(context.resources, R.drawable.dino)
-    val obstacleBitmap = ImageBitmap.imageResource(context.resources, R.drawable.dino)
+    val dinoBitmap = ImageBitmap.imageResource(context.resources,R.drawable.dino)
+    val obstacleBitmap = ImageBitmap.imageResource(context.resources, R.drawable.obstacle)
 
     // 游戏状态
     var gameState by remember { mutableStateOf(GameState.READY) }
