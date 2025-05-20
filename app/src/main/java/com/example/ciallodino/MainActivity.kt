@@ -36,7 +36,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import com.example.ciallodino.R
 
 
 class MainActivity : ComponentActivity() {
@@ -95,18 +94,18 @@ object GameConstants {
     const val DINO_SIZE = 150f              // 恐龙图像绘制尺寸（像素）
     const val DINO_JUMP_HEIGHT = 400f       // 恐龙跳跃的最大高度（像素）
     const val DINO_JUMP_DURATION = 60       // 恐龙完成一次跳跃的总帧数
-
     // 障碍物相关参数
     const val OBSTACLE_SIZE = 150f          // 障碍物图像绘制尺寸（像素）
     const val OBSTACLE_SPEED = 10f          // 障碍物向左移动的速度（像素/帧）
     const val OBSTACLE_SPAWN_CHANCE = 2     // 每帧生成新障碍物的概率（百分比）
-
     // 游戏世界布局参数
     const val GROUND_HEIGHT_RATIO = 0.7f    // 地面位置占屏幕高度的比例（0.7表示70%高度处）
     const val DINO_X_POSITION_RATIO = 0.2f  // 恐龙在水平方向的固定位置比例（0.2表示20%宽度处）
-
     // 游戏循环控制参数
     const val GAME_LOOP_DELAY_MS = 30L      // 游戏主循环每次迭代的延迟时间（毫秒），控制游戏速度
+    // 修改游戏循环控制参数为60FPS
+    const val TARGET_FPS = 60                     // 目标帧率
+    const val FRAME_DURATION_MS = 1000L / TARGET_FPS // 每帧的理想持续时间(毫秒)
 }
 
 @Composable
@@ -140,72 +139,79 @@ fun DinoGameApp(    onJump: () -> Unit = {}
     // 游戏主循环
     LaunchedEffect(gameState) {
         if (gameState == GameState.PLAYING) {
-            var lastUpdateTime = System.currentTimeMillis()
+            val frameDuration = GameConstants.FRAME_DURATION_MS
+            var lastUpdateTime = System.nanoTime()
+            var accumulator = 0L
 
             while (gameState == GameState.PLAYING) {
-                val currentTime = System.currentTimeMillis()
-                val deltaTime = currentTime - lastUpdateTime
+                val currentTime = System.nanoTime()
+                val elapsedTime = currentTime - lastUpdateTime
                 lastUpdateTime = currentTime
+                accumulator += elapsedTime
 
-                // 更新分数
-                score++
-                highScore = maxOf(score, highScore)
+                // 确保按照60FPS的速度更新游戏状态
+                while (accumulator >= frameDuration * 1_000_000) {
+                    // 更新游戏状态
+                    score++
+                    highScore = maxOf(score, highScore)
 
-                // 处理恐龙跳跃
-                if (isJumping) {
-                    if (jumpCount == 0) {
-                        // 跳跃开始时触发音效
-                        onJump()
+                    // 处理恐龙跳跃
+                    if (isJumping) {
+                        if (jumpCount == 0) {
+                            onJump()
+                        }
+                        if (jumpCount < GameConstants.DINO_JUMP_DURATION / 2) {
+                            dinoY -= GameConstants.DINO_JUMP_HEIGHT / (GameConstants.DINO_JUMP_DURATION / 2)
+                        } else if (jumpCount < GameConstants.DINO_JUMP_DURATION) {
+                            dinoY += GameConstants.DINO_JUMP_HEIGHT / (GameConstants.DINO_JUMP_DURATION / 2)
+                        } else {
+                            isJumping = false
+                            jumpCount = 0
+                            dinoY = groundY - GameConstants.DINO_SIZE
+                        }
+                        jumpCount++
                     }
-                    if (jumpCount < GameConstants.DINO_JUMP_DURATION / 2) {
-                        dinoY -= GameConstants.DINO_JUMP_HEIGHT / (GameConstants.DINO_JUMP_DURATION / 2)
-                    } else if (jumpCount < GameConstants.DINO_JUMP_DURATION) {
-                        dinoY += GameConstants.DINO_JUMP_HEIGHT / (GameConstants.DINO_JUMP_DURATION / 2)
-                    } else {
-                        isJumping = false
-                        jumpCount = 0
-                        dinoY = groundY - GameConstants.DINO_SIZE // 确保恐龙回到地面
+
+                    // 移动障碍物
+                    obstacles.removeAll { obstacle ->
+                        obstacle.x + GameConstants.OBSTACLE_SIZE < 0
                     }
-                    jumpCount++
-                }
+                    obstacles.forEach { obstacle ->
+                        obstacle.x -= GameConstants.OBSTACLE_SPEED
+                    }
 
-                // 移动障碍物
-                obstacles.removeAll { obstacle ->
-                    obstacle.x + GameConstants.OBSTACLE_SIZE < 0
-                }
-                obstacles.forEach { obstacle ->
-                    obstacle.x -= GameConstants.OBSTACLE_SPEED
-                }
-
-                // 生成新障碍物
-                val minObstacleGap = GameConstants.OBSTACLE_SIZE * 3  // 最小间距为障碍物宽度的3倍
-                val lastObstacle = obstacles.lastOrNull()
-                if (Random.nextInt(100) < GameConstants.OBSTACLE_SPAWN_CHANCE &&
-                    (lastObstacle == null || lastObstacle.x < screenWidthPx - minObstacleGap)
-                ) {
-                    obstacles.add(
-                        Obstacle(
-                            x = screenWidthPx,
-                            y = groundY - GameConstants.OBSTACLE_SIZE,
-                            width = GameConstants.OBSTACLE_SIZE,
-                            height = GameConstants.OBSTACLE_SIZE
+                    // 生成新障碍物
+                    val minObstacleGap = GameConstants.OBSTACLE_SIZE * 3
+                    val lastObstacle = obstacles.lastOrNull()
+                    if (Random.nextInt(100) < GameConstants.OBSTACLE_SPAWN_CHANCE &&
+                        (lastObstacle == null || lastObstacle.x < screenWidthPx - minObstacleGap)
+                    ) {
+                        obstacles.add(
+                            Obstacle(
+                                x = screenWidthPx,
+                                y = groundY - GameConstants.OBSTACLE_SIZE,
+                                width = GameConstants.OBSTACLE_SIZE,
+                                height = GameConstants.OBSTACLE_SIZE
+                            )
                         )
-                    )
+                    }
+
+                    // 碰撞检测
+                    if (checkCollision(
+                            dinoX = screenWidthPx * GameConstants.DINO_X_POSITION_RATIO,
+                            dinoY = dinoY,
+                            dinoWidth = GameConstants.DINO_SIZE,
+                            dinoHeight = GameConstants.DINO_SIZE,
+                            obstacles = obstacles
+                        )) {
+                        gameState = GameState.GAME_OVER
+                    }
+
+                    accumulator -= frameDuration * 1_000_000
                 }
 
-                // 碰撞检测
-                if (checkCollision(
-                        dinoX = screenWidthPx * GameConstants.DINO_X_POSITION_RATIO,
-                        dinoY = dinoY,
-                        dinoWidth = GameConstants.DINO_SIZE,
-                        dinoHeight = GameConstants.DINO_SIZE,
-                        obstacles = obstacles
-                    )) {
-                    gameState = GameState.GAME_OVER
-                }
-
-                // 控制游戏速度
-                delay(maxOf(0, GameConstants.GAME_LOOP_DELAY_MS - deltaTime))
+                // 允许Compose进行UI更新
+                delay(1L)
             }
         }
     }
